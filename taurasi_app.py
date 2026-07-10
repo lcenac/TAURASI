@@ -17,7 +17,7 @@ import plotly.express as px
 
 st.set_page_config(
     page_title="TAURASI · WNBA Projections",
-    page_icon="🏀",
+    page_icon="edittau.jpg",
     layout="wide",
 )
 
