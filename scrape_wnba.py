@@ -35,6 +35,7 @@ HEADERS = {
 
 BASE_URL = "https://stats.nba.com/stats/leaguedashplayerstats"
 BIO_URL = "https://stats.nba.com/stats/leaguedashplayerbiostats"
+INDEX_URL = "https://stats.nba.com/stats/playerindex"
 
 LEAGUE_ID = "10"       # WNBA
 START_YEAR = 2026
@@ -260,8 +261,65 @@ def fetch_bio(year):
         return None
 
 
+def fetch_player_index(year):
+    """
+    One call returns POSITION (plus height/weight/draft info) for every
+    player in the league for a season. Much faster than hitting
+    commonplayerinfo per player, since leaguedashplayerbiostats does
+    not expose position for the WNBA.
+    """
 
-def merge_season(base_df, adv_df, bio_df, year):
+    season_str = f"{year}-{str(year + 1)[-2:]}"  # e.g. 2026 -> "2026-27"
+
+    params = {
+        "College": "",
+        "Country": "",
+        "DraftPick": "",
+        "DraftRound": "",
+        "DraftYear": "",
+        "Height": "",
+        "Historical": 1,
+        "LeagueID": LEAGUE_ID,
+        "Season": season_str,
+        "SeasonType": "Regular Season",
+        "TeamID": 0,
+        "Weight": "",
+    }
+
+
+    try:
+
+        resp = nba_request(
+            INDEX_URL,
+            params
+        )
+
+        if resp is None:
+            return None
+
+
+        data = resp.json()
+
+        cols = data["resultSets"][0]["headers"]
+        rows = data["resultSets"][0]["rowSet"]
+
+        return pd.DataFrame(
+            rows,
+            columns=cols
+        )
+
+
+    except Exception as e:
+
+        print(
+            f"\n  [PlayerIndex] Error {year}: {e}"
+        )
+
+        return None
+
+
+
+def merge_season(base_df, adv_df, bio_df, index_df, year):
 
     base_cols = [
         "PLAYER_ID",
@@ -318,8 +376,71 @@ def merge_season(base_df, adv_df, bio_df, year):
         )
 
     else:
-
         df = base_df.copy()
+
+
+
+    # ==========================
+    # Add bio information
+    # ==========================
+
+    if bio_df is not None and not bio_df.empty:
+
+        bio_cols = [
+            "PLAYER_ID",
+            "PLAYER_HEIGHT_INCHES",
+            "PLAYER_HEIGHT",
+            "PLAYER_WEIGHT",
+            "DRAFT_YEAR",
+            "DRAFT_ROUND",
+            "DRAFT_NUMBER",
+        ]
+
+
+        bio_cols = [
+            c for c in bio_cols
+            if c in bio_df.columns
+        ]
+
+
+        df = df.merge(
+            bio_df[bio_cols],
+            on="PLAYER_ID",
+            how="left"
+        )
+
+
+
+    # ==========================
+    # Add position from PlayerIndex
+    # ==========================
+
+    if index_df is not None and not index_df.empty:
+
+        idx_cols = [
+            c for c in ["PERSON_ID", "POSITION"]
+            if c in index_df.columns
+        ]
+
+        if "PERSON_ID" in idx_cols and "POSITION" in idx_cols:
+
+            idx_slim = (
+                index_df[idx_cols]
+                .rename(columns={"PERSON_ID": "PLAYER_ID"})
+                .drop_duplicates(subset=["PLAYER_ID"])
+            )
+
+            df = df.merge(
+                idx_slim,
+                on="PLAYER_ID",
+                how="left"
+            )
+
+        else:
+            print(
+                "  [PlayerIndex] Expected columns not found — "
+                f"got {list(index_df.columns)}"
+            )
 
 
 
@@ -327,29 +448,47 @@ def merge_season(base_df, adv_df, bio_df, year):
 
         "PLAYER_NAME": "Player",
         "TEAM_ABBREVIATION": "Team",
+
         "AGE": "Age",
         "GP": "G",
         "MIN": "MP",
+
         "REB": "TRB",
+
         "FG_PCT": "FG%",
         "FG3_PCT": "3P%",
         "FT_PCT": "FT%",
+
         "OREB": "ORB",
         "DREB": "DRB",
+
         "PLUS_MINUS": "PlusMinus",
         "W_PCT": "WinPct",
+
         "NET_RATING": "NetRtg",
         "USG_PCT": "USG%",
+
         "OFF_RATING": "ORtg",
         "DEF_RATING": "DRtg",
+
         "TS_PCT": "TS%",
         "AST_PCT": "AST%",
         "REB_PCT": "REB%",
+        
+        "PLAYER_HEIGHT_INCHES": "Height_IN",
+        "PLAYER_HEIGHT": "Height",
+        "PLAYER_WEIGHT": "Weight",
+
+        "DRAFT_YEAR": "DraftYear",
+        "DRAFT_ROUND": "DraftRound",
+        "DRAFT_NUMBER": "DraftNumber",
 
     })
 
 
+
     numeric_cols = [
+
         "MP",
         "G",
         "PTS",
@@ -359,9 +498,18 @@ def merge_season(base_df, adv_df, bio_df, year):
         "STL",
         "BLK",
         "TOV",
+
         "NetRtg",
         "USG%",
         "PIE",
+
+        "Height_IN",
+        "Weight",
+
+        "DraftYear",
+        "DraftRound",
+        "DraftNumber",
+
     ]
 
 
@@ -375,36 +523,44 @@ def merge_season(base_df, adv_df, bio_df, year):
             )
 
 
-    # Remove extremely small samples
+
+    # minimum sample size
+
     df = df[df["MP"] >= 8].copy()
 
 
 
+    # ==========================
+    # Advanced metrics
+    # ==========================
+
+
     net = df.get(
         "NetRtg",
-        pd.Series(0.0, index=df.index)
+        pd.Series(0.0,index=df.index)
     ).fillna(0)
 
 
     usg = df.get(
         "USG%",
-        pd.Series(0.2, index=df.index)
+        pd.Series(0.2,index=df.index)
     ).fillna(0.2)
 
 
     pie = df.get(
         "PIE",
-        pd.Series(0.1, index=df.index)
+        pd.Series(0.1,index=df.index)
     ).fillna(0.1)
 
 
 
     df["BPM"] = (
-        (net * 0.4)
+        (net * .4)
         + (usg * 15)
         + (pie * 20)
         - 8
     ).round(2)
+
 
 
     df["WS"] = (
@@ -415,68 +571,26 @@ def merge_season(base_df, adv_df, bio_df, year):
     ).round(2)
 
 
+
     df["WS40"] = pie.round(3)
 
 
 
-    # Positions
+    # ==========================
+    # Position
+    # ==========================
 
-    if (
-        bio_df is not None
-        and not bio_df.empty
-        and "PLAYER_ID" in bio_df.columns
-    ):
+    # PlayerIndex supplies raw POSITION (e.g. "Guard", "Forward-Center").
+    # Normalize to short codes; fall back to UNK if missing.
 
-        pos_col = None
-
-        if "PLAYER_POSITION" in bio_df.columns:
-            pos_col = "PLAYER_POSITION"
-
-
-        if pos_col:
-
-            bio_pos = bio_df[
-                [
-                    "PLAYER_ID",
-                    pos_col
-                ]
-            ].copy()
-
-
-            df = df.merge(
-                bio_pos,
-                on="PLAYER_ID",
-                how="left"
-            )
-
-
-            df["Pos"] = (
-                df[pos_col]
-                .map(POSITION_NORMALIZE)
-                .fillna(df[pos_col])
-                .fillna("F")
-            )
-
-
-            df.drop(
-                columns=[pos_col],
-                inplace=True
-            )
-
-
-        else:
-
-            df["Pos"] = "F"
-
-
+    if "POSITION" in df.columns:
+        df["Pos"] = df["POSITION"].map(POSITION_NORMALIZE).fillna("UNK")
+        df = df.drop(columns=["POSITION"])
     else:
-
-        df["Pos"] = "F"
-
+        df["Pos"] = "UNK"
 
 
-    df["Overseas"] = False
-    df["DraftRd"] = 1
+
     df["Season"] = year
 
 
@@ -539,11 +653,19 @@ def scrape_all():
         random_delay()
 
 
+        index_df = fetch_player_index(
+            year
+        )
+
+        random_delay()
+
+
 
         season_df = merge_season(
             base_df,
             adv_df,
             bio_df,
+            index_df,
             year
         )
 

@@ -149,13 +149,7 @@ st.markdown("""
     margin-bottom: 12px;
   }
 
-  /* Overseas flag */
-  .overseas-flag {
-    font-size: 0.72rem;
-    color: #888;
-    font-style: italic;
-    margin-top: 6px;
-  }
+ 
 
   /* Sidebar */
   [data-testid="stSidebar"] {
@@ -211,7 +205,15 @@ def clean(df):
     return df
 
 
-FEATURES = ["Age", "BPM", "WS40", "PosNum", "PTS", "TRB", "AST"]
+FEATURES = [
+    "Age",
+    "BPM",
+    "WS40",
+    "PTS",
+    "TRB",
+    "AST",
+    "Height_IN"
+]
 
 @st.cache_resource
 def build_engine(df):
@@ -342,11 +344,11 @@ peak = max(projs) if projs else player_row["WARP_W"]
 tier_label, tier_class = assign_tier(peak)
 
 # Player header card
-overseas_txt = "· plays overseas" if player_row["Overseas"] else ""
+
 st.markdown(f"""
 <div class='player-card'>
   <p class='player-name'>{selected_player}</p>
-  <p class='player-meta'>{player_row['Pos']} &nbsp;·&nbsp; Age {int(player_row['Age'])} &nbsp;·&nbsp; {int(selected_season)} season {overseas_txt}</p>
+  <p class='player-meta'>{player_row['Pos']} &nbsp;·&nbsp; Age {int(player_row['Age'])} &nbsp;·&nbsp; {int(selected_season)} season</p>
   <span class='tier-badge {tier_class}'>{tier_label}</span>
 </div>
 """, unsafe_allow_html=True)
