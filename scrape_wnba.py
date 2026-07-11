@@ -9,6 +9,7 @@ Output:    wnba_data.csv
 from curl_cffi import requests
 import pandas as pd
 import time
+import random
 
 HEADERS = {
     "Accept": "application/json, text/plain, */*",
@@ -30,9 +31,9 @@ HEADERS = {
 BASE_URL   = "https://stats.nba.com/stats/leaguedashplayerstats"
 BIO_URL    = "https://stats.nba.com/stats/leaguedashplayerbiostats"
 LEAGUE_ID  = "10"   # 10 = WNBA
-START_YEAR = 2003
+START_YEAR = 2026
 END_YEAR   = 2026
-DELAY      = 4      # seconds between requests
+DELAY = random.uniform(3,6)    # seconds between requests
 
 # Maps whatever leaguedashplayerbiostats returns (varies by season/format)
 # into the single-letter codes the dashboard's pos_map expects.
@@ -245,32 +246,59 @@ def scrape_all():
 
         season_df = merge_season(base_df, adv_df, bio_df, year)
         all_frames.append(season_df)
+
         print(f"OK — {len(season_df)} players")
 
     if not all_frames:
         print("\nNo data collected.")
         return
 
-    full = pd.concat(all_frames, ignore_index=True)
-    full = full.sort_values(["Season", "Player"]).reset_index(drop=True)
+    # New scraped data
+    new_data = pd.concat(all_frames, ignore_index=True)
+
+    # Existing CSV
+    try:
+        old_data = pd.read_csv("wnba_data.csv")
+
+        # Remove old versions of seasons we just scraped
+        old_data = old_data[
+            ~old_data["Season"].isin(new_data["Season"].unique())
+        ]
+
+        # Combine old + new
+        full = pd.concat(
+            [old_data, new_data],
+            ignore_index=True
+        )
+
+        print(
+            f"\nUpdated seasons: {sorted(new_data['Season'].unique())}"
+        )
+
+    except FileNotFoundError:
+        # First run
+        full = new_data
+        print("\nNo existing CSV found. Creating new file.")
+
+    # Sort and save
+    full = (
+        full
+        .sort_values(["Season", "Player"])
+        .reset_index(drop=True)
+    )
+
     full.to_csv("wnba_data.csv", index=False)
 
     print(f"\n{'='*50}")
     print(f"Saved {len(full)} player-seasons → wnba_data.csv")
     print(f"Seasons : {full['Season'].nunique()}")
     print(f"Players : {full['Player'].nunique()}")
-    print(f"Positions found: {sorted(full['Pos'].unique())}")
+    print(f"Positions found: {sorted(full['Pos'].dropna().unique())}")
+
     if failed_years:
         print(f"Failed  : {failed_years}")
-    print("="*50)
-    print("""
-NEXT STEP:
-  Update load_data() in taurasi_app.py to:
 
-    @st.cache_data
-    def load_data():
-        return pd.read_csv("wnba_data.csv")
-""")
+    print("="*50)
 
 
 if __name__ == "__main__":
