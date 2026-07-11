@@ -205,6 +205,10 @@ def clean(df):
     return df
 
 
+# PosNum included so comps are drawn from similar positional roles --
+# without it, a high-usage guard and a high-usage forward with similar
+# counting stats could rank as close comps despite playing very
+# different roles.
 FEATURES = [
     "Age",
     "BPM",
@@ -212,35 +216,71 @@ FEATURES = [
     "PTS",
     "TRB",
     "AST",
-    "Height_IN"
+    "Height_IN",
+    "PosNum",
 ]
+
+
+def _feature_frame(df):
+    """
+    Build the model-ready feature matrix. Missing values are filled
+    with each column's league median rather than 0 -- filling with 0
+    would treat a player with an unknown Height_IN or BPM as an
+    extreme outlier once the values are scaled, which most often hits
+    rookies and overseas players (exactly the players you'd most want
+    reasonable comps for).
+    """
+    X = df[FEATURES].copy()
+    medians = X.median(numeric_only=True)
+    return X.fillna(medians), medians
+
 
 @st.cache_resource
 def build_engine(df):
-    X = df[FEATURES].fillna(0)
+    X, medians = _feature_frame(df)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     knn = NearestNeighbors(n_neighbors=min(15, len(df)), metric="euclidean")
     knn.fit(X_scaled)
-    return scaler, knn
+
+    # Reference distance distribution used to turn raw distances into
+    # a similarity score that reflects this dataset, rather than a
+    # fixed fudge factor. See find_comparables().
+    ref_distances, _ = knn.kneighbors(X_scaled, n_neighbors=min(6, len(df)))
+    # column 0 is distance to self (0); use the rest
+    typical_neighbor_dist = np.median(ref_distances[:, 1:]) if ref_distances.shape[1] > 1 else 1.0
+
+    return scaler, knn, medians, typical_neighbor_dist
 
 
-def find_comparables(player_row, df, scaler, knn, top_n=5):
-    X_p = pd.DataFrame([player_row[FEATURES].fillna(0)])
-    X_scaled = scaler.transform(X_p)
+def _prep_query_row(player_row, scaler, medians):
+    X_p = player_row[FEATURES].copy()
+    X_p = X_p.fillna(medians)
+    return scaler.transform(pd.DataFrame([X_p]))
+
+
+def find_comparables(player_row, df, scaler, knn, medians, typical_neighbor_dist, top_n=5):
+    X_scaled = _prep_query_row(player_row, scaler, medians)
     distances, indices = knn.kneighbors(X_scaled)
     comps = df.iloc[indices[0][1:]].copy()
-    raw = distances[0][1:top_n+1]
-    max_d = raw.max() if raw.max() > 0 else 1
+    raw = distances[0][1:top_n + 1]
     comps = comps.head(top_n).copy()
-    comps["Sim"] = (100 * (1 - raw / (max_d * 1.8))).clip(0, 100).round(0).astype(int)
+
+    # Similarity as an exponential decay anchored to the dataset's own
+    # typical neighbor distance, instead of an arbitrary max_d * 1.8
+    # rescale. A comp at roughly the "typical" nearest-neighbor
+    # distance lands near ~37% (1/e); much closer comps push toward
+    # 100%, much farther ones decay toward 0. Still a heuristic, but
+    # it moves with the actual data instead of a hardcoded constant.
+    scale = typical_neighbor_dist if typical_neighbor_dist > 0 else 1.0
+    comps["Sim"] = (100 * np.exp(-raw[:len(comps)] / scale)).clip(0, 100).round(0).astype(int)
+
     return comps[["Player", "Season", "Age", "Pos", "BPM", "WARP_W", "Sim"]]
 
 
-def project_player(player_row, df, scaler, knn, seasons=5, top_n=10):
-    X_p = pd.DataFrame([player_row[FEATURES].fillna(0)])
-    X_scaled = scaler.transform(X_p)
-    distances, indices = knn.kneighbors(X_scaled, n_neighbors=min(top_n+1, len(df)))
+def project_player(player_row, df, scaler, knn, medians, seasons=5, top_n=10):
+    X_scaled = _prep_query_row(player_row, scaler, medians)
+    distances, indices = knn.kneighbors(X_scaled, n_neighbors=min(top_n + 1, len(df)))
     comp_indices = indices[0][1:]
     comp_distances = distances[0][1:]
     weights = 1 / (comp_distances + 1e-5)
@@ -302,7 +342,7 @@ def outcome_dist(peak):
 raw = load_data()
 df = clean(raw)
 df = compute_warp_w(df)
-scaler, knn = build_engine(df)
+scaler, knn, feature_medians, typical_neighbor_dist = build_engine(df)
 
 # ─────────────────────────────────────────────
 # SIDEBAR
@@ -339,7 +379,7 @@ st.markdown("""
 
 player_row = df[(df["Player"] == selected_player) & (df["Season"] == selected_season)].iloc[0]
 
-projs, lows, highs = project_player(player_row, df, scaler, knn, seasons=seasons_ahead)
+projs, lows, highs = project_player(player_row, df, scaler, knn, feature_medians, seasons=seasons_ahead)
 peak = max(projs) if projs else player_row["WARP_W"]
 tier_label, tier_class = assign_tier(peak)
 
@@ -458,7 +498,7 @@ with col1:
 
 with col2:
     st.markdown("<p class='section-label'>Top comparables</p>", unsafe_allow_html=True)
-    comps = find_comparables(player_row, df, scaler, knn, top_n=5)
+    comps = find_comparables(player_row, df, scaler, knn, feature_medians, typical_neighbor_dist, top_n=5)
 
     for _, row in comps.iterrows():
         sim = int(row["Sim"])
