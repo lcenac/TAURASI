@@ -651,4 +651,4 @@ st.markdown("""
 <div class='taurasi-footer'>
   TAURASI v0.1 · Sample dataset · Replace load_data() with scraped Basketball-Reference data for full projections
 </div>
-""", unsafe_allow_html=True)    
+""", unsafe_allow_html=True)
