@@ -446,10 +446,7 @@ st.markdown("""
 
 player_row = df[(df["Player"] == selected_player) & (df["Season"] == selected_season)].iloc[0]
 
-# projs, lows, highs = project_player(player_row, df, scaler, knn, feature_medians, seasons=seasons_ahead)
-projs = [player_row["WARP_W"]] * seasons_ahead
-lows = projs
-highs = projs
+projs, lows, highs = project_player(player_row, df, scaler, knn, feature_medians, seasons=seasons_ahead)
 peak = max(projs) if projs else player_row["WARP_W"]
 
 # Current-season tier: how good is this player RIGHT NOW, ranked against
@@ -558,7 +555,7 @@ with col1:
         yaxis=dict(showgrid=True, gridcolor="#1a1a1a", color="#333", tickfont=dict(size=11, color="#555"), title="WARP-W"),
         hovermode="x unified",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.write("chart disabled")
 
     # Outcome distribution
     st.markdown("<p class='section-label' style='margin-top:1rem;'>Outcome distribution (year 1)</p>", unsafe_allow_html=True)
@@ -591,7 +588,7 @@ with col1:
         yaxis=dict(showgrid=False, visible=False),
         bargap=0.3,
     )
-    st.plotly_chart(fig2, use_container_width=True)
+    st.write("chart disabled")
 
 
 with col2:
@@ -647,7 +644,7 @@ with col2:
         height=220,
         showlegend=False,
     )
-    st.plotly_chart(fig3, use_container_width=True)
+    st.write("chart disabled")
 
 #
 # Footer
