@@ -435,10 +435,17 @@ with st.sidebar:
     st.markdown("---")
 
     players = sorted(df["Player"].unique())
-    selected_player = st.selectbox("Select player", players)
+    selected_player = st.selectbox("Select player", players, key="player_select")
+
+    # Reset the season selection whenever the player changes, so a
+    # stale season value from the previous player can't accidentally
+    # carry over or cause the widget to desync during the rerun.
+    if st.session_state.get("_last_player") != selected_player:
+        st.session_state["_last_player"] = selected_player
+        st.session_state.pop("season_select", None)
 
     player_seasons = sorted(df[df["Player"] == selected_player]["Season"].unique(), reverse=True)
-    selected_season = st.selectbox("Season", player_seasons)
+    selected_season = st.selectbox("Season", player_seasons, key="season_select")
 
     seasons_ahead = st.slider("Projection years", 1, 7, 5)
 
@@ -458,7 +465,11 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-player_row = df[(df["Player"] == selected_player) & (df["Season"] == selected_season)].iloc[0]
+player_matches = df[(df["Player"] == selected_player) & (df["Season"] == selected_season)]
+if player_matches.empty:
+    st.error(f"No data found for {selected_player} in {selected_season}. Try reselecting the player.")
+    st.stop()
+player_row = player_matches.iloc[0]
 
 projs, lows, highs = project_player(player_row, df, scaler, knn, feature_medians, seasons=seasons_ahead)
 peak = max(projs) if projs else player_row["WARP_W"]
