@@ -81,10 +81,4 @@ python scraper.py
 
 TAURASI was built as part of a portfolio of sports analytics projects exploring the intersection of full-stack engineering and data science, alongside [Hot Shot](#), a full-stack NBA/WNBA streak tracker.
 
-## License
 
-[Add your license, e.g., MIT]
-
-## Contact
-
-[Your name / LinkedIn / email]
