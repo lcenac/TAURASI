@@ -2,7 +2,7 @@
 TAURASI — Trajectory Analysis Using Regression And Similarity Index
 WNBA Player Projection System · Streamlit Dashboard
 """
-
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,6 +11,7 @@ from sklearn.neighbors import NearestNeighbors
 import plotly.graph_objects as go
 import plotly.express as px
 
+st.write("CSV size:", os.path.getsize("wnba_data.csv") / 1024 / 1024, "MB")
 # ─────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────
