@@ -3,6 +3,20 @@ TAURASI — Trajectory Analysis Using Regression And Similarity Index
 WNBA Player Projection System · Streamlit Dashboard
 """
 
+import os
+# Must be set BEFORE numpy/scikit-learn are imported. Streamlit Community
+# Cloud runs on constrained/shared CPU containers, and multi-threaded
+# OpenBLAS (used internally by numpy/scikit-learn for NearestNeighbors)
+# can race and segfault under those conditions -- this tends to surface
+# intermittently, often triggered by specific data shapes (e.g. a small
+# season's worth of rows changing how BLAS splits the work), which
+# matches a crash that reproduces on cloud but not locally.
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -267,6 +281,7 @@ def _feature_frame(df):
     reasonable comps for).
     """
     X = df[FEATURES].copy()
+    X = X.replace([np.inf, -np.inf], np.nan)
     medians = X.median(numeric_only=True)
     return X.fillna(medians), medians
 
