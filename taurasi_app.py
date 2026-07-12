@@ -65,6 +65,18 @@ st.markdown("""
     border-radius: 12px;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .player-card-info { flex: 1; }
+  .player-card-logo {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    flex-shrink: 0;
+    opacity: 0.95;
   }
   .player-name {
     font-size: 1.6rem;
@@ -186,13 +198,37 @@ def load_data():
     return df
 
 
-def compute_warp_w(df, replacement_bpm=-2.0, league_avg_mp=28.5, games=40):
+def get_team_logo_url(team_abbr: str) -> str:
+    """
+    Team logos are served by stats.wnba.com keyed on team abbreviation
+    (the same value already stored in the 'Team' column from the
+    scraper). No separate team_id lookup needed.
+    """
+    if not isinstance(team_abbr, str) or not team_abbr:
+        return ""
+    return f"https://stats.wnba.com/media/img/teams/logos/{team_abbr}.svg"
+
+
+SAMPLE_MIN_GAMES = 15  # below this, tier/peak projections get flagged as low-confidence
+
+
+def compute_warp_w(df, replacement_bpm=-2.0, league_avg_mp=28.5):
+    """
+    WARP-W is now scaled by each player's ACTUAL games played (df["G"])
+    instead of a flat 40-game assumption. The old flat constant treated
+    a hot 8-game stretch the same as a full healthy season, which is
+    what was inflating low-minute players (e.g. someone who logs great
+    per-minute numbers in a handful of appearances gets extrapolated
+    to a full season of that rate with no penalty for the tiny sample
+    it came from).
+    """
     df = df.copy()
+    games = df["G"].fillna(0)
     df["WARP_W"] = (
         (df["BPM"] - replacement_bpm)
         * (df["MP"] / league_avg_mp)
         * (1 / 22.0)
-        * games
+        * 44
     ).round(1)
     return df
 
@@ -313,6 +349,36 @@ def project_player(player_row, df, scaler, knn, medians, seasons=5, top_n=10):
     return projs, lows, highs
 
 
+def is_low_sample(player_row, min_games=SAMPLE_MIN_GAMES):
+    g = player_row.get("G", None)
+    return (g is None) or (pd.isna(g)) or (g < min_games)
+
+
+def percentile_tier(value, season_distribution):
+    """
+    Tier based on percentile rank within that season's full league
+    WARP-W distribution, instead of fixed absolute cutoffs. Fixed
+    cutoffs compress the gap between a clearly elite player and a
+    merely solid one whenever both happen to land in the same few
+    raw WARP-W points -- which is common when comparing an
+    established star's (declining) future projection against a
+    low-minute player's best-case breakout projection. Percentile
+    keeps "the best player in the league this season" and "a good
+    rotation piece" from sharing a tier just because their raw
+    numbers happen to be close.
+    """
+    season_distribution = season_distribution.dropna()
+    if season_distribution.empty:
+        return "Unranked", "tier-role"
+    pct = (season_distribution < value).mean() * 100
+    if pct >= 97: return "All-Time Great", "tier-alltime"
+    if pct >= 90: return "Franchise Player", "tier-franchise"
+    if pct >= 75: return "Star", "tier-star"
+    if pct >= 50: return "Starter", "tier-starter"
+    if pct >= 20: return "Role Player", "tier-role"
+    return "Replacement Level", "tier-replacement"
+
+
 def assign_tier(peak):
     if peak >= 9:    return "All-Time Great",   "tier-alltime"
     if peak >= 6:    return "Franchise Player", "tier-franchise"
@@ -381,15 +447,43 @@ player_row = df[(df["Player"] == selected_player) & (df["Season"] == selected_se
 
 projs, lows, highs = project_player(player_row, df, scaler, knn, feature_medians, seasons=seasons_ahead)
 peak = max(projs) if projs else player_row["WARP_W"]
-tier_label, tier_class = assign_tier(peak)
+
+# Current-season tier: how good is this player RIGHT NOW, ranked against
+# the full league that season -- not a projected future peak, which can
+# make an established star's normal aging decline look similar to a
+# low-minute player's optimistic breakout scenario.
+season_distribution = df[df["Season"] == selected_season]["WARP_W"]
+tier_label, tier_class = percentile_tier(player_row["WARP_W"], season_distribution)
+
+# Separate, secondary label for where the projection thinks they're headed.
+peak_tier_label, peak_tier_class = percentile_tier(peak, season_distribution)
 
 # Player header card
+team_logo_url = get_team_logo_url(player_row.get("Team", ""))
+low_sample = is_low_sample(player_row)
+games_played = player_row.get("G", None)
+
+low_sample_badge = ""
+if low_sample:
+    gp_display = int(games_played) if pd.notna(games_played) else "?"
+    low_sample_badge = f"""<span class='tier-badge tier-role' style='margin-left:8px;'>
+        Small Sample &middot; {gp_display} GP
+    </span>"""
+
+peak_badge = ""
+if peak_tier_class != tier_class:
+    peak_badge = f"""<span class='tier-badge {peak_tier_class}' style='margin-left:8px;opacity:0.75;' title='Where the model projects this player trending toward'>
+        Trajectory: {peak_tier_label}
+    </span>"""
 
 st.markdown(f"""
 <div class='player-card'>
-  <p class='player-name'>{selected_player}</p>
-  <p class='player-meta'>{player_row['Pos']} &nbsp;·&nbsp; Age {int(player_row['Age'])} &nbsp;·&nbsp; {int(selected_season)} season</p>
-  <span class='tier-badge {tier_class}'>{tier_label}</span>
+  <div class='player-card-info'>
+    <p class='player-name'>{selected_player}</p>
+    <p class='player-meta'>{player_row['Pos']} &nbsp;·&nbsp; Age {int(player_row['Age'])} &nbsp;·&nbsp; {int(selected_season)} season &nbsp;·&nbsp; {player_row.get('Team', '')}</p>
+    <span class='tier-badge {tier_class}'>{tier_label}</span>{peak_badge}{low_sample_badge}
+  </div>
+  <img class='player-card-logo' src='{team_logo_url}' onerror="this.style.display='none'" />
 </div>
 """, unsafe_allow_html=True)
 
@@ -557,4 +651,4 @@ st.markdown("""
 <div class='taurasi-footer'>
   TAURASI v0.1 · Sample dataset · Replace load_data() with scraped Basketball-Reference data for full projections
 </div>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True)    
