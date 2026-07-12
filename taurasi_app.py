@@ -2,7 +2,7 @@
 TAURASI — Trajectory Analysis Using Regression And Similarity Index
 WNBA Player Projection System · Streamlit Dashboard
 """
-import os
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,7 +11,6 @@ from sklearn.neighbors import NearestNeighbors
 import plotly.graph_objects as go
 import plotly.express as px
 
-st.write("CSV size:", os.path.getsize("wnba_data.csv") / 1024 / 1024, "MB")
 # ─────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────
@@ -229,7 +228,7 @@ def compute_warp_w(df, replacement_bpm=-2.0, league_avg_mp=28.5):
         (df["BPM"] - replacement_bpm)
         * (df["MP"] / league_avg_mp)
         * (1 / 22.0)
-        * 44
+        * games
     ).round(1)
     return df
 
@@ -555,7 +554,7 @@ with col1:
         yaxis=dict(showgrid=True, gridcolor="#1a1a1a", color="#333", tickfont=dict(size=11, color="#555"), title="WARP-W"),
         hovermode="x unified",
     )
-    st.write("chart disabled")
+    st.plotly_chart(fig, use_container_width=True)
 
     # Outcome distribution
     st.markdown("<p class='section-label' style='margin-top:1rem;'>Outcome distribution (year 1)</p>", unsafe_allow_html=True)
@@ -588,7 +587,7 @@ with col1:
         yaxis=dict(showgrid=False, visible=False),
         bargap=0.3,
     )
-    st.write("chart disabled")
+    st.plotly_chart(fig2, use_container_width=True)
 
 
 with col2:
@@ -644,7 +643,7 @@ with col2:
         height=220,
         showlegend=False,
     )
-    st.write("chart disabled")
+    st.plotly_chart(fig3, use_container_width=True)
 
 #
 # Footer
@@ -653,4 +652,3 @@ st.markdown("""
   TAURASI v0.1 · Sample dataset · Replace load_data() with scraped Basketball-Reference data for full projections
 </div>
 """, unsafe_allow_html=True)
-
