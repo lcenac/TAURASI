@@ -446,7 +446,10 @@ st.markdown("""
 
 player_row = df[(df["Player"] == selected_player) & (df["Season"] == selected_season)].iloc[0]
 
-projs, lows, highs = project_player(player_row, df, scaler, knn, feature_medians, seasons=seasons_ahead)
+# projs, lows, highs = project_player(player_row, df, scaler, knn, feature_medians, seasons=seasons_ahead)
+projs = [player_row["WARP_W"]] * seasons_ahead
+lows = projs
+highs = projs
 peak = max(projs) if projs else player_row["WARP_W"]
 
 # Current-season tier: how good is this player RIGHT NOW, ranked against
