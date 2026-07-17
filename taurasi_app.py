@@ -675,6 +675,6 @@ with col2:
 # Footer
 st.markdown("""
 <div class='taurasi-footer'>
-  TAURASI v0.1 · Sample dataset · Replace load_data() with scraped Basketball-Reference data for full projections
+  TAURASI v0.1 · Data: Basketball-Reference · Model: k-NN similarity + aging curves · Value metric: WARP-W
 </div>
 """, unsafe_allow_html=True)
