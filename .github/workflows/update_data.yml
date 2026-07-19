@@ -27,6 +27,19 @@ jobs:
         run: |
           pip install -r requirements.txt
 
+      - name: Diagnose connectivity
+        run: |
+          echo "=== stats.nba.com (API endpoint) ==="
+          curl -v --max-time 15 https://stats.nba.com/stats/leaguedashplayerstats \
+            -H "Origin: https://www.nba.com" \
+            -H "Referer: https://www.nba.com/" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            -H "x-nba-stats-origin: stats" \
+            -H "x-nba-stats-token: true" || true
+          echo ""
+          echo "=== www.nba.com (general site) ==="
+          curl -v --max-time 15 https://www.nba.com || true
+
       - name: Run scraper
         timeout-minutes: 60
         run: |

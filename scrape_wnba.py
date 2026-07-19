@@ -6,6 +6,7 @@ Run once:  python scrape_wnba.py
 Output:    wnba_data.csv
 """
 
+import sys
 from curl_cffi import requests
 import pandas as pd
 import time
@@ -687,7 +688,7 @@ def scrape_all():
             "No data collected."
         )
 
-        return
+        sys.exit(1)
 
 
 
@@ -769,6 +770,9 @@ def scrape_all():
         print(
             f"Failed years: {failed_years}"
         )
+
+        sys.exit(1)
+
 
 
     print(
