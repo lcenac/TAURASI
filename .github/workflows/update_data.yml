@@ -5,6 +5,11 @@ on:
     - cron: "0 10 * * *"
 
   workflow_dispatch:
+    inputs:
+      attempt:
+        description: "Retry attempt number (internal use)"
+        required: false
+        default: "1"
 
 jobs:
   scrape:
@@ -12,6 +17,7 @@ jobs:
 
     permissions:
       contents: write
+      actions: write
 
     steps:
 
@@ -27,20 +33,8 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Diagnose connectivity
-        run: |
-          echo "=== stats.nba.com (API endpoint) ==="
-          curl -v --max-time 15 https://stats.nba.com/stats/leaguedashplayerstats \
-            -H "Origin: https://www.nba.com" \
-            -H "Referer: https://www.nba.com/" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            -H "x-nba-stats-origin: stats" \
-            -H "x-nba-stats-token: true" || true
-          echo ""
-          echo "=== www.nba.com (general site) ==="
-          curl -v --max-time 15 https://www.nba.com || true
-
       - name: Run scraper
+        id: run_scraper
         timeout-minutes: 60
         run: |
           python scrape_wnba.py
@@ -55,3 +49,24 @@ jobs:
           git commit -m "Update WNBA data" || exit 0
 
           git push
+
+      # If the scraper fails (e.g. this runner's IP is currently
+      # blocked upstream), dispatch a fresh run on a new runner —
+      # which gets a different IP from GitHub's pool. Capped at 3
+      # total attempts per day so it can't loop forever.
+      - name: Retry on a fresh runner
+        if: failure() && steps.run_scraper.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ATTEMPT: ${{ github.event.inputs.attempt || '1' }}
+        run: |
+          if [ "$ATTEMPT" -lt "3" ]; then
+            NEXT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT failed — dispatching attempt $NEXT on a fresh runner"
+            gh workflow run "${{ github.workflow }}" \
+              --ref "${{ github.ref_name }}" \
+              -f attempt="$NEXT"
+          else
+            echo "Reached max attempts (3) for today — giving up"
+            exit 1
+          fi
